@@ -5,7 +5,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 import TransactionScreen from "../screens/Transaction";
-import SearchScreen from "../screens/Search";
+import SearchScreen from "../screens/search";
 
 const Tab = createBottomTabNavigator();
 
