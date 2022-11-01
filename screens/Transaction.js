@@ -7,6 +7,8 @@ import {
   Text,
   ImageBackground,
   Image,
+  KeyboardAvoidingView,
+  Alert,
 } from "react-native";
 import * as Permissions from "expo-permissions";
 import { BarCodeScanner } from "expo-barcode-scanner";
@@ -25,27 +27,103 @@ export default class TransactionScreen extends Component {
       domState: "normal",
       hasCameraPermissions: null,
       scanned: false,
+      bookName: "",
+      studentName: "",
     };
   }
-  handleTransaction = () => {
-    var { bookId } = this.state;
+  handleTransaction = async () => {
+    var { bookId, studentId } = this.state;
+    await this.getBookDetails(bookId);
+    await this.getStudentDetails(studentId);
     db.collection("BSC001")
       .doc(bookId)
       .get()
       .then((doc) => {
         var book = doc.data();
+
         if (book.is_book_available) {
-          this.initiateBookIssue();
+          var { bookName, studentName } = this.state;
+          this.initiateBookIssue(bookId, studentId, bookName, studentName);
+          Alert.alert("Livro retirado");
         } else {
-          this.initiateBookReturn();
+          Alert.alert("Livro devolvido");
+          var { bookName, studentName } = this.state;
+          this.initiateBookReturn(bookId, studentId, bookName, studentName);
         }
       });
   };
-  initiateBookIssue = () => {
-    console.log("livro retirado");
+
+  getBookDetails = (bookId) => {
+    bookId = bookId.trim();
+    db.collection("BSC001")
+      .where("book_id", "==", bookId)
+      .get()
+      .then((snapshot) => {
+        snapshot.docs.map((doc) => {
+          this.setState({
+            bookName: doc.data().book_details.book_name,
+          });
+        });
+      });
   };
-  initiateBookReturn = () => {
-    console.log("livro devolvido");
+
+  getStudentDetails = (studentId) => {
+    studentId = studentId.trim();
+    db.collection("STD")
+      .where("student_id", "==", studentId)
+      .get()
+      .then((snapshot) => {
+        snapshot.docs.map((doc) => {
+          this.setState({
+            studentName: doc.data().student_details.student_name,
+          });
+        });
+      });
+  };
+
+  initiateBookIssue = async (bookId, studentId, bookName, studentName) => {
+    db.collection("Transactions").add({
+      book_id: bookId,
+      student_id: studentId,
+      book_name: bookName,
+      student_name: studentName,
+      date: firebase.firestore.Timestamp.now().toDate(),
+      transaction_type: "issue",
+    });
+    db.collection("BSC001").doc(bookId).update({
+      is_book_available: false,
+    });
+    db.collection("STD")
+      .doc(studentId)
+      .update({
+        number_of_books_issued: firebase.firestore.FieldValue.increment(1),
+      });
+    this.setState({
+      bookId: "",
+      studentId: "",
+    });
+  };
+  initiateBookReturn = async (bookId, studentId, bookName, studentName) => {
+    db.collection("Transactions").add({
+      book_id: bookId,
+      student_id: studentId,
+      book_name: bookName,
+      student_name: studentName,
+      date: firebase.firestore.Timestamp.now().toDate(),
+      transaction_type: "return",
+    });
+    db.collection("BSC001").doc(bookId).update({
+      is_book_available: true,
+    });
+    db.collection("STD")
+      .doc(studentId)
+      .update({
+        number_of_books_issued: firebase.firestore.FieldValue.increment(-1),
+      });
+    this.setState({
+      bookId: "",
+      studentId: "",
+    });
   };
 
   getCameraPermissions = async (domState) => {
@@ -90,7 +168,7 @@ export default class TransactionScreen extends Component {
       );
     }
     return (
-      <View style={styles.container}>
+      <KeyboardAvoidingView behavior="padding" style={styles.container}>
         <ImageBackground source={bgImage} style={styles.bgImage}>
           <View style={styles.upperContainer}>
             <Image source={appIcon} style={styles.appIcon} />
@@ -103,6 +181,7 @@ export default class TransactionScreen extends Component {
                 placeholder={"ID do Livro"}
                 placeholderTextColor={"#FFFFFF"}
                 value={bookId}
+                onChangeText={(text) => this.setState({ bookId: text })}
               />
               <TouchableOpacity
                 style={styles.scanbutton}
@@ -117,6 +196,7 @@ export default class TransactionScreen extends Component {
                 placeholder={"ID do Estudante"}
                 placeholderTextColor={"#FFFFFF"}
                 value={studentId}
+                onChangeText={(text) => this.setState({ studentId: text })}
               />
               <TouchableOpacity
                 style={styles.scanbutton}
@@ -125,9 +205,15 @@ export default class TransactionScreen extends Component {
                 <Text style={styles.scanbuttonText}>Digitalizar</Text>
               </TouchableOpacity>
             </View>
+            <TouchableOpacity
+              style={[styles.button, { marginTop: 25 }]}
+              onPress={this.handleTransaction}
+            >
+              <Text style={styles.buttonText}>Enviar</Text>
+            </TouchableOpacity>
           </View>
         </ImageBackground>
-      </View>
+      </KeyboardAvoidingView>
     );
   }
 }
@@ -192,6 +278,19 @@ const styles = StyleSheet.create({
   scanbuttonText: {
     fontSize: 20,
     color: "#0A0101",
+    fontFamily: "Rajdhani_600SemiBold",
+  },
+  button: {
+    width: "43%",
+    height: 55,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F48D20",
+    borderRadius: 15,
+  },
+  buttonText: {
+    fontSize: 25,
+    color: "#FFFFFF",
     fontFamily: "Rajdhani_600SemiBold",
   },
 });
