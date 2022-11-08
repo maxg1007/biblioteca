@@ -35,22 +35,104 @@ export default class TransactionScreen extends Component {
     var { bookId, studentId } = this.state;
     await this.getBookDetails(bookId);
     await this.getStudentDetails(studentId);
-    db.collection("BSC001")
-      .doc(bookId)
-      .get()
-      .then((doc) => {
-        var book = doc.data();
-
-        if (book.is_book_available) {
-          var { bookName, studentName } = this.state;
-          this.initiateBookIssue(bookId, studentId, bookName, studentName);
-          Alert.alert("Livro retirado");
-        } else {
+    var transactionType = await this.checkBookAvailability(bookId);
+    if (!transactionType) {
+      this.setState({ bookId: "", studentId: "" });
+      Alert.alert("O livro nao foi encontrado");
+    } else if (transactionType === "issue") {
+      var isAvailable = await this.checkStudent(studentId);
+      if (isAvailable) {
+        var { bookName, studentName } = this.state;
+        this.initiateBookIssue(bookId, studentId, bookName, studentName);
+        Alert.alert("Livro retirado");
+      } else {
+        var isAvailable = await this.checkStudentEligibilityForBookReturn(
+          bookId,
+          studentId
+        );
+        if (isAvailable) {
           Alert.alert("Livro devolvido");
           var { bookName, studentName } = this.state;
           this.initiateBookReturn(bookId, studentId, bookName, studentName);
         }
+      }
+    }
+  };
+
+  checkBookAvailability = async (bookId) => {
+    const bookRef = await db
+      .collection("BSC001")
+      .where("book_id", "==", bookId)
+      .get();
+
+    var transactionType = "";
+    if (bookRef.docs.length == 0) {
+      transactionType = false;
+    } else {
+      bookRef.docs.map((doc) => {
+        //se o livro estiver disponível, o tipo de transação será issue (entregar)
+        // caso contrário, será return (devolver)
+        transactionType = doc.data().is_book_available ? "issue" : "return";
       });
+    }
+
+    return transactionType;
+  };
+
+  //Bp
+  checkStudentEligibilityForBookReturn = async (bookId, studentId) => {
+    const transactionRef = await db
+      .collection("Transactions")
+      .where("book_id", "==", bookId)
+      .limit(1)
+      .get();
+    var isStudentEligible = "";
+    transactionRef.docs.map((doc) => {
+      var lastBookTransaction = doc.data();
+      if (lastBookTransaction.student_id === studentId) {
+        isStudentEligible = true;
+      } else {
+        isStudentEligible = false;
+        Alert.alert("O livro não foi retirado por este aluno!");
+        this.setState({
+          bookId: "",
+          studentId: "",
+        });
+      }
+    });
+    return isStudentEligible;
+  };
+
+  checkStudent = async (studentId) => {
+    const STDRef = await db
+      .collection("STD")
+      .where("student_id", "==", studentId)
+      .get();
+    var isStudentEligible = "";
+
+    if (STDRef.docs.length == 0) {
+      isStudentEligible = false;
+      this.setState({
+        bookId: "",
+        studentId: "",
+      });
+      Alert.alert("Esse aluno nao existe");
+    } else {
+      STDRef.docs.map((doc) => {
+        if (doc.data().number_of_books_issued < 2) {
+          isStudentEligible = true;
+        } else {
+          isStudentEligible = false;
+          this.setState({
+            bookId: "",
+            studentId: "",
+          });
+          Alert.alert("o aluno nao pode pegar mais livros");
+        }
+      });
+    }
+
+    return isStudentEligible;
   };
 
   getBookDetails = (bookId) => {
